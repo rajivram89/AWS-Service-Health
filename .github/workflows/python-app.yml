@@ -22,5 +22,5 @@ jobs:
       - name: Run script
         run: python health.py
         env:
-          USERNAME: ${{ secrets.USER_NAME }}
+          USERNAME: ${{ secrets.USERNAME }}
           PASSWORD: ${{ secrets.PASSWORD }}
