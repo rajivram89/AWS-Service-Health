@@ -41,7 +41,7 @@ for entry in feed.entries:
     if entry.title and not token_invoked:
         token_url = "https://preprod.ustsmartops.ai/paas/itops/keycloak/auth/realms/cloudopsbcbsa/protocol/openid-connect/token"
         payload = {
-            'username': os.getenv("USERNAME"),
+            'username': os.getenv("username"),
             'password': os.getenv("PASSWORD"),
             'client_id': 'smartops-frontend',
             'grant_type': 'password'
@@ -59,3 +59,4 @@ for entry in feed.entries:
             print("Failed to retrieve token:", response.status_code, response.text)
 
         token_invoked = True
+
