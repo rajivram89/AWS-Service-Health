@@ -57,8 +57,11 @@ for entry in feed.entries:
             print("Access Token:", token)
         else:
             print("Failed to retrieve token:", response.status_code, response.text)
+            print("USERNAME:", os.getenv("USERNAME"))
+            print("PASSWORD:", os.getenv("PASSWORD"))
 
         token_invoked = True
+
 
 
 
