@@ -1,34 +1,51 @@
 import feedparser
 import requests
-from io import BytesIO
+import hashlib
+import json
 import os
+from dateutil import parser
+from datetime import timezone, timedelta
 
-# Static RSS XML content
-rss_content = """<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0">
-  <channel>
-    <title>AWS Service Health - US East (N. Virginia) - Amazon S3</title>
-    <link>https://status.aws.amazon.com/rss/s3-us-east-1.rss</link>
-    <description>Updates on the health of Amazon S3 in US East (N. Virginia)</description>
-    <language>en-us</language>
-    <pubDate>Thu, 30 Oct 2025 12:00:00 CDT</pubDate>
-    <lastBuildDate>Thu, 30 Oct 2025 12:30:00 CDT</lastBuildDate>
-    <item>
-      <title>Service Issue: Amazon S3 - Increased Error Rates (US East)</title>
-      <link>https://status.aws.amazon.com/#s3_us-east-1_20251030_1</link>
-      <description>We are investigating increased error rates and latencies for Amazon S3 in the US East (N. Virginia) region. We are working to resolve the issue and will provide updates as they become available.</description>
-      <pubDate>Thu, 30 Oct 2025 12:15:00 CDT</pubDate>
-      <guid>https://status.aws.amazon.com/#s3_us-east-1_20251030_1</guid>
-    </item>
-  </channel>
-</rss>"""
+# ----------------- Configuration -----------------
+RSS_CONTENT = """<?xml version="1.0" encoding="UTF-8"?>
+                <rss version="2.0">
+                <channel>
+                    <title>AWS Service Health - Invocation delays and elevated error rates for Lambda in the US-WEST-2 Region</title>
+                    <link>https://status.aws.amazon.com/rss/Lambda-us-west-2.rss</link>
+                    <description>Updates on the health of AWS Lambda in US West (Oregon)</description>
+                    <language>en-us</language>
+                    <pubDate>Thu, 06 Nov 2025 09:00:00 CST</pubDate>
+                    <lastBuildDate>Thu, 06 Nov 2025 10:30:00 CST</lastBuildDate>
+                    <item>
+                    <title>Service Resolved: Invocation delays and elevated error rates for Lambda in the US-WEST-2 Region</title>
+                    <link>https://status.aws.amazon.com/#Lambda-us-west-2</link>
+                    <description>We are investigating increased invocation latency and elevated error rates affecting AWS Lambda in the US-WEST-2 Region. Mitigation efforts are underway.</description>
+                    <pubDate>Thu, 06 Nov 2025 09:45:00 CST</pubDate>
+                    <guid>https://status.aws.amazon.com/#Lambda-us-west-2-20251106094500</guid>
+                    </item>
+                </channel>
+                </rss>"""
 
-# Parse the RSS feed
-feed = feedparser.parse(rss_content)
+TOKEN_URL = "https://preprod.ustsmartops.ai/paas/itops/keycloak/auth/realms/cloudopsbcbsa/protocol/openid-connect/token"
+ALERT_API_URL = "https://preprod.ustsmartops.ai/paas/itops/alertmapping/api/invokerealtime"
+CORRELATION_FILE = "correlation_ids.json"
 
-# Print feed title and entries
+USERNAME = os.getenv("USERNAME")
+PASSWORD = os.getenv("PASSWORD")
+CLIENT_ID = "smartops-frontend"
+
+# ----------------- Load Correlation Map -----------------
+if os.path.exists(CORRELATION_FILE):
+    with open(CORRELATION_FILE, "r") as f:
+        correlation_map = json.load(f)
+else:
+    correlation_map = {}
+
+# ----------------- Parse RSS Feed -----------------
+feed = feedparser.parse(RSS_CONTENT)
 print(f"Feed Title: {feed.feed.title}\n")
 
+token = None
 token_invoked = False
 
 for entry in feed.entries:
@@ -36,33 +53,83 @@ for entry in feed.entries:
     print(f"Published: {entry.published}")
     print(f"Link: {entry.link}")
     print(f"Summary: {entry.summary}\n")
+    
+   # Convert pubDate to datetime with microseconds
+    published_dt = parser.parse(entry.published)
+    cdt_offset = timezone(timedelta(hours=-5))
+    published_cdt = published_dt.astimezone(cdt_offset)
+    alert_time = published_cdt.strftime("%Y-%m-%d %H:%M:%S.%f")
+    print(alert_time)
 
-    # If title exists, invoke token API once
-    if entry.title and not token_invoked:
-        token_url = "https://preprod.ustsmartops.ai/paas/itops/keycloak/auth/realms/cloudopsbcbsa/protocol/openid-connect/token"
+    # Determine severity
+    severity = "Critical" if "Resolved" not in entry.title else "Ok"
+
+    # Generate issue key and correlation ID
+    issue_key = hashlib.md5(entry.title.encode()).hexdigest()
+    if issue_key in correlation_map:
+        correlation_id = correlation_map[issue_key]
+    else:
+        correlation_id = hashlib.md5((entry.title + alert_time).encode()).hexdigest()
+        correlation_map[issue_key] = correlation_id
+
+    # Save updated correlation map
+    with open(CORRELATION_FILE, "w") as f:
+        json.dump(correlation_map, f)
+
+    # Token API (once)
+    if not token_invoked:
         payload = {
-            'username': os.getenv("USERNAME"),
-            'password': os.getenv("PASSWORD"),
-            'client_id': 'smartops-frontend',
+            'username': USERNAME,
+            'password': PASSWORD,
+            'client_id': CLIENT_ID,
             'grant_type': 'password'
         }
-        headers = {
-            'Content-Type': 'application/x-www-form-urlencoded'
-        }
+        headers = {'Content-Type': 'application/x-www-form-urlencoded'}
 
-        response = requests.post(token_url, data=payload, headers=headers, verify=False)  # verify=False for SSL issues
-
+        response = requests.post(TOKEN_URL, data=payload, headers=headers, verify=False)
         if response.status_code == 200:
             token = response.json().get("access_token")
             print("Access Token:", token)
+            token_invoked = True
         else:
             print("Failed to retrieve token:", response.status_code, response.text)
-            print("USERNAME:", os.getenv("USERNAME"))
-            print("PASSWORD:", os.getenv("PASSWORD"))
+            continue
 
-        token_invoked = True
+    
+    # Prepare alert payload
+    affected_service = feed.feed.title
+    alert_body = {
+        "organizationId": "20",
+        "projectId": "151",
+        "correlationId": correlation_id,
+        "senseParams": {
+            "nodeName": entry.title.split(":")[1].strip(),
+            "alertMetric": "ServiceHealth",
+            "alertTime": alert_time,
+            "objectName": entry.summary,
+            "objectStatus": "Service Down",
+            "severity": severity,
+            "requestReceivedTime": alert_time,
+            "resourceType": "Cloud",
+            "ipAddress": "",
+            "alertDetailsURL": "https://health.aws.amazon.com/health/status",
+            "alertMessage": entry.title,
+            "alertName": affected_service + " - " + entry.title,
+            "objectType": "AWS Service Status",
+            "source": "AWS",
+            "timezone": "UTC",
+            "dateFormat": "%Y-%m-%d %H:%M:%S.%f"
+        }
+    }
 
+    # Send alert
+    alert_headers = {
+        "Organization-name": "cloudopsbcbsa",
+        "ORGANIZATION-KEY": "20",
+        "User": USERNAME,
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
 
-
-
-
+    alert_response = requests.post(ALERT_API_URL, json=alert_body, headers=alert_headers, verify=False)
+    print("Alert Response:", alert_response.status_code, alert_response.text)
