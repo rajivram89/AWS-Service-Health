@@ -24,3 +24,12 @@ jobs:
         env:
           USERNAME: ${{ secrets.USERNAME }}
           PASSWORD: ${{ secrets.PASSWORD }}
+
+      # Save correlation_ids.json per job run
+      - name: Commit updated correlation_ids.json
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add correlation_ids.json
+          git commit -m "Update correlation_ids.json [skip ci]" || echo "No changes to commit"
+          git push
