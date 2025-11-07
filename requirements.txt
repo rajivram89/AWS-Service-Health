@@ -1,7 +1,8 @@
 feedparser
 requests
 pandas
-dateutil
+python-dateutil
+
 
 
 
