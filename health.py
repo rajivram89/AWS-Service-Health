@@ -24,6 +24,37 @@ if os.path.exists(CORRELATION_FILE):
 else:
     correlation_map = {}
 
+# ----------------- Helper: Extract Node Name -----------------
+def extract_node_name(entry):
+    title = entry.title
+    summary = entry.summary
+
+    # Normalize for easier parsing
+    t = title.replace("[", "").replace("]", "")
+
+    # Try to extract service name from title
+    # AWS often uses formats like:
+    # - "Service Issue: Amazon S3 - Latency"
+    # - "Resolved: Amazon EC2 - Connectivity"
+    # - "Service is operating normally: [RESOLVED] Change Propagation Delays"
+    tokens = [" - ", " – ", ": "]
+
+    for token in tokens:
+        if token in t:
+            part = t.split(token)[-1].strip()
+            if part.lower().startswith("amazon") or part.lower().startswith("aws"):
+                return part.split(" - ")[0].strip()
+
+    # Try summary (AWS often puts service name here)
+    if "Amazon" in summary or "AWS" in summary:
+        words = summary.split()
+        for i, w in enumerate(words):
+            if w in ["Amazon", "AWS"]:
+                return " ".join(words[i:i+2]).replace(",", "").strip()
+
+    # Fallback
+    return "AWS Service"
+
 # ----------------- Parse RSS Feed -----------------
 feed = feedparser.parse(RSS_CONTENT)
 print(f"Feed Title: {feed.feed.title}\n")
@@ -36,16 +67,16 @@ for entry in feed.entries:
     print(f"Published: {entry.published}")
     print(f"Link: {entry.link}")
     print(f"Summary: {entry.summary}\n")
-    
-   # Convert pubDate to datetime with microseconds
+
+    # Convert pubDate to datetime with microseconds
     published_dt = parser.parse(entry.published)
     cdt_offset = timezone(timedelta(hours=-5))
     published_cdt = published_dt.astimezone(cdt_offset)
     alert_time = published_cdt.strftime("%Y-%m-%d %H:%M:%S.%f")
     print(alert_time)
 
-    # Determine severity
-    severity = "Critical" if "Resolved" not in entry.title else "Ok"
+    # Determine severity (case-insensitive)
+    severity = "Ok" if "resolved" in entry.title.lower() else "Critical"
 
     # Generate issue key and correlation ID
     issue_key = hashlib.md5(entry.title.encode()).hexdigest()
@@ -78,7 +109,9 @@ for entry in feed.entries:
             print("Failed to retrieve token:", response.status_code, response.text)
             continue
 
-    
+    # Extract node name safely
+    node_name = extract_node_name(entry)
+
     # Prepare alert payload
     affected_service = feed.feed.title
     alert_body = {
@@ -86,11 +119,11 @@ for entry in feed.entries:
         "projectId": "151",
         "correlationId": correlation_id,
         "senseParams": {
-            "nodeName": entry.title.split(":")[1].strip(),
+            "nodeName": node_name,
             "alertMetric": "ServiceHealth",
             "alertTime": alert_time,
             "objectName": entry.summary,
-            "objectStatus": "Service Down",
+            "objectStatus": "Service Down" if severity == "Critical" else "Service Restored",
             "severity": severity,
             "requestReceivedTime": alert_time,
             "resourceType": "Cloud",
@@ -116,4 +149,3 @@ for entry in feed.entries:
 
     alert_response = requests.post(ALERT_API_URL, json=alert_body, headers=alert_headers, verify=False)
     print("Alert Response:", alert_response.status_code, alert_response.text)
-
