@@ -116,7 +116,7 @@ for entry in feed.entries:
     affected_service = feed.feed.title
     alert_body = {
         "organizationId": "20",
-        "projectId": "151",
+        "projectId": "2",
         "correlationId": correlation_id,
         "senseParams": {
             "nodeName": node_name,
@@ -149,5 +149,6 @@ for entry in feed.entries:
 
     alert_response = requests.post(ALERT_API_URL, json=alert_body, headers=alert_headers, verify=False)
     print("Alert Response:", alert_response.status_code, alert_response.text)
+
 
 
