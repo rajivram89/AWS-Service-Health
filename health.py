@@ -9,7 +9,7 @@ from datetime import timezone, timedelta
 # ----------------- Configuration -----------------
 RSS_CONTENT = "https://status.aws.amazon.com/rss/all.rss"
 
-TOKEN_URL = "https://pfm.ustsmartops.ai/paas/itops/keycloak/auth/realms/cloudopsbcbsa/protocol/openid-connect/token"
+TOKEN_URL = "https://pfm.ustsmartops.ai/paas/bcbsaitops/keycloak/auth/realms/cloudopsbcbsa/protocol/openid-connect/token"
 ALERT_API_URL = "https://pfm.ustsmartops.ai/paas/itops/alertmapping/api/invokerealtime"
 CORRELATION_FILE = "correlation_ids.json"
 
@@ -149,3 +149,4 @@ for entry in feed.entries:
 
     alert_response = requests.post(ALERT_API_URL, json=alert_body, headers=alert_headers, verify=False)
     print("Alert Response:", alert_response.status_code, alert_response.text)
+
