@@ -1,10 +1,10 @@
 name: Python Script Runner
 
 on:
-  schedule:
-    - cron: "*/15 * * * *" 
   push:
     branches: [ main ]
+  # schedule:
+  #   - cron: "*/15 * * * *"   # Disabled
 
 permissions:
   contents: write
@@ -30,7 +30,6 @@ jobs:
           USERNAME: ${{ secrets.USERNAME }}
           PASSWORD: ${{ secrets.PASSWORD }}
 
-      # Save correlation_ids.json per job run
       - name: Commit updated correlation_ids.json
         run: |
           git config user.name "github-actions[bot]"
